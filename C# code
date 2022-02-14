@@ -1,1 +1,270 @@
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Text;
+using System.Threading.Tasks;
+using System.Windows;
+using System.Windows.Controls;
+using System.Windows.Data;
+using System.Windows.Documents;
+using System.Windows.Input;
+using System.Windows.Media;
+using System.Windows.Media.Imaging;
+using System.Windows.Navigation;
+using System.Windows.Shapes;
 
+using System.Windows.Threading; 
+// da bismo mogli da koristimo dispatcher time
+
+namespace PacMan
+{
+    public partial class MainWindow : Window
+    {
+
+        DispatcherTimer gameTimer = new DispatcherTimer(); 
+
+        bool goLeft, goRight, goDown, goUp; //za pomeranje u 4 smera
+        bool noLeft, noRight, noDown, noUp; //za zaustavljanje
+
+        int speed = 15; // brzina pacman-a
+
+        Rect hit; // provera da li je pacman udario zid ili drugog čovečuljka ili novčić
+
+        int ghostSpeed = 11;
+        int ghostMovingStep = 160; // kako se čovečuljak kreće
+        int currentGhostStep; 
+        int score = 0; // rezultat
+
+
+
+        public MainWindow()
+        {
+            InitializeComponent();
+
+            GameSetUp(); //prvo se poziva ova funkcija
+        }
+
+        private void CanvasKeyDown(object sender, KeyEventArgs e)
+        {
+            
+
+            if (e.Key == Key.Left && noLeft == false)
+            {
+                // ako pritisnemo levu strelicu
+                goRight = goUp = goDown = false; 
+                noRight = noUp = noDown = false; 
+
+                goLeft = true; 
+
+                pacman.RenderTransform = new RotateTransform(-180, pacman.Width / 2, pacman.Height / 2); // rotiram sliku pacman-a nalevo
+            }
+
+            if (e.Key == Key.Right && noRight == false)
+            {
+                // desna strelica
+                noLeft = noUp = noDown = false; 
+                goLeft = goUp = goDown = false; 
+
+                goRight = true; 
+
+                pacman.RenderTransform = new RotateTransform(0, pacman.Width / 2, pacman.Height / 2); // rotiram udesno
+
+            }
+
+            if (e.Key == Key.Up && noUp == false)
+            {
+                //gore
+                noRight = noDown = noLeft = false; 
+                goRight = goDown = goLeft = false; 
+
+                goUp = true; 
+
+                pacman.RenderTransform = new RotateTransform(-90, pacman.Width / 2, pacman.Height / 2); 
+            }
+
+            if (e.Key == Key.Down && noDown == false)
+            {
+                //dole
+                noUp = noLeft = noRight = false;
+                goUp = goLeft = goRight = false; 
+
+                goDown = true; 
+
+                pacman.RenderTransform = new RotateTransform(90, pacman.Width / 2, pacman.Height / 2); 
+            }
+        }
+
+        private void GameSetUp()
+        {
+
+            MyCanvas.Focus(); //da bismo mogli da koristimo strelice na tastaturi
+
+            gameTimer.Tick += GameLoop;
+            gameTimer.Interval = TimeSpan.FromMilliseconds(20);
+            gameTimer.Start(); 
+
+            currentGhostStep = ghostMovingStep; // set current ghost step to the ghost move step
+
+            //dodeljujemo sliku pravougaonicima
+            ImageBrush pacmanImage = new ImageBrush();
+            pacmanImage.ImageSource = new BitmapImage(new Uri("pack://application:,,,/images/pacman.jpg"));
+            pacman.Fill = pacmanImage;
+
+            ImageBrush redGhost = new ImageBrush();
+            redGhost.ImageSource = new BitmapImage(new Uri("pack://application:,,,/images/red.jpg"));
+            redGuy.Fill = redGhost;
+
+            ImageBrush orangeGhost = new ImageBrush();
+            orangeGhost.ImageSource = new BitmapImage(new Uri("pack://application:,,,/images/orange.jpg"));
+            orangeGuy.Fill = orangeGhost;
+
+            ImageBrush pinkGhost = new ImageBrush();
+            pinkGhost.ImageSource = new BitmapImage(new Uri("pack://application:,,,/images/pink.jpg"));
+            pinkGuy.Fill = pinkGhost;
+
+
+        }
+
+        private void GameLoop(object sender, EventArgs e)
+        {
+
+            txtScore.Content = "Rezultat: " + score; //prikazuje rezultat
+
+            //kretanje pacman-a
+
+            if (goRight)
+            {
+                //pacman treba da se krece udesno, znaci 'dodajem' speed levo
+                Canvas.SetLeft(pacman, Canvas.GetLeft(pacman) + speed);
+            }
+            if (goLeft)
+            {
+                //oduzimamo od levog
+                Canvas.SetLeft(pacman, Canvas.GetLeft(pacman) - speed);
+            }
+            if (goUp)
+            {
+                //za gornju strelicu oduzimamo speed od gornje pozicije (top)
+                Canvas.SetTop(pacman, Canvas.GetTop(pacman) - speed);
+            }
+            if (goDown)
+            {
+                Canvas.SetTop(pacman, Canvas.GetTop(pacman) + speed);
+            }
+
+            //pacman mora da se krece u zadatim granicama tj. u okviru naseg canvas-a
+            if (goDown && Canvas.GetTop(pacman) + 80 > Application.Current.MainWindow.Height)
+            {
+                noDown = true;
+                goDown = false;
+            }
+            if (goUp && Canvas.GetTop(pacman) < 1)
+            {
+                noUp = true;
+                goUp = false;
+            }
+            if (goLeft && Canvas.GetLeft(pacman) - 10 < 1)
+            {
+                noLeft = true;
+                goLeft = false;
+            }
+            if (goRight && Canvas.GetLeft(pacman) + 70 > Application.Current.MainWindow.Width)
+            {
+                noRight = true;
+                goRight = false;
+            }
+
+            hit = new Rect(Canvas.GetLeft(pacman), Canvas.GetTop(pacman), pacman.Width, pacman.Height); //dodelimo promenlj. hit vrednost pacman-a
+
+            foreach (var x in MyCanvas.Children.OfType<Rectangle>())
+            {
+                // proveravamo sve pravougaonike (rectangle) u igrici tj sta predstavljaju, uz pomoc prom. x
+
+                Rect hit1 = new Rect(Canvas.GetLeft(x), Canvas.GetTop(x), x.Width, x.Height); //nova prom. za sve ostale pravougaonike u igrici
+                //uz pomoc tag-a wall prepoznajemo zidove, ako pacman udari u njih, prestaje da se krece
+                if ((string)x.Tag == "wall")
+                {
+                    if (goLeft == true && hit.IntersectsWith(hit1))
+                    {
+                        Canvas.SetLeft(pacman, Canvas.GetLeft(pacman) + 10);
+                        noLeft = true;
+                        goLeft = false;
+                    }
+                    if (goRight == true && hit.IntersectsWith(hit1))
+                    {
+                        Canvas.SetLeft(pacman, Canvas.GetLeft(pacman) - 10);
+                        noRight = true;
+                        goRight = false;
+                    }
+                    if (goDown == true && hit.IntersectsWith(hit1))
+                    {
+                        Canvas.SetTop(pacman, Canvas.GetTop(pacman) - 10);
+                        noDown = true;
+                        goDown = false;
+                    }
+                    if (goUp == true && hit.IntersectsWith(hit1))
+                    {
+                        Canvas.SetTop(pacman, Canvas.GetTop(pacman) + 10);
+                        noUp = true;
+                        goUp = false;
+                    }
+                }
+
+                //ako je novcic, uveca se rezultat
+                if ((string)x.Tag == "coin")
+                {
+                    if (hit.IntersectsWith(hit1) && x.Visibility == Visibility.Visible)
+                    {
+                        //sakrivamo novcic da se ne vidi vise
+                        x.Visibility = Visibility.Hidden;
+                        //uvecamo rezultat za 1
+                        score++;
+                    }
+                }
+
+                //ako smo naleteli na coveculjke to je kraj igre
+                if ((string)x.Tag == "ghost")
+                {
+                    if (hit.IntersectsWith(hit1))
+                    {
+                        GameOver("Uhvatili su te coveculjci! :( Pritisni OK da pokusas opet.");
+                    }
+
+                    //narandzasti coveculjak se krece ulevo
+                    if (x.Name.ToString() == "orangeGuy")
+                    {
+                        Canvas.SetLeft(x, Canvas.GetLeft(x) - ghostSpeed);
+
+                    }
+                    else
+                    {
+                        //ostali se krecu udesno npr.
+                        Canvas.SetLeft(x, Canvas.GetLeft(x) + ghostSpeed);
+                    }
+
+                   currentGhostStep--;
+                    if (currentGhostStep < 1)
+                    {
+                        currentGhostStep = ghostMovingStep;
+                        ghostSpeed = -ghostSpeed;
+                    }
+                }
+            }
+            //ako igrac osvoji 110 novcica, ima ih malo vise
+            if (score == 110)
+            {
+                GameOver("Presli ste igricu! :D");
+            }
+        }
+
+        private void GameOver(string message)
+        {
+            gameTimer.Stop(); 
+            MessageBox.Show(message, "PAC-MAN"); 
+
+            // kada igrac pritisne OK, ponovo pokreni igricu
+            System.Diagnostics.Process.Start(Application.ResourceAssembly.Location);
+            Application.Current.Shutdown();
+        }
+    }
+}
